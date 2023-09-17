@@ -2,6 +2,8 @@ package it.sssupserver.app;
 
 import static org.junit.Assert.assertTrue;
 
+import java.net.UnknownHostException;
+
 import org.junit.Test;
 
 /**
@@ -16,5 +18,12 @@ public class AppTest
     public void shouldAnswerWithTrue()
     {
         assertTrue( true );
+    }
+
+    @Test
+    public void testHostName() throws UnknownHostException {
+        var hostname = App.getHostnameOrThrow();
+        System.out.println("Hostname = " + hostname);
+        assertTrue(hostname.equals("picci"));
     }
 }
