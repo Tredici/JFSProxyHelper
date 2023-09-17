@@ -1,9 +1,9 @@
 package it.sssupserver.app;
 
+import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
-import java.net.MalformedURLException;
 import java.net.URL;
 import java.net.UnknownHostException;
 import java.util.Scanner;
@@ -31,7 +31,7 @@ import com.sun.net.httpserver.HttpServer;
  */
 public class App 
 {
-    public static final String DEFAULT_ENDPOINT = "http://0.0.0.0:8008/";
+    public static final String DEFAULT_CONFIG = "DispatcherConfig.json";
     public static final int BACKLOG = 128;
 
     // thread pools used to handle client requests
@@ -66,30 +66,13 @@ public class App
         timedThreadPool = Executors.newSingleThreadScheduledExecutor();
     }
 
-    private static URL getListeningEndpoint(String[] args) {
-        try {
-            URL ans = null;
-            if (args.length > 0) {
-                if (args.length != 1) {
-                    System.err.println("Invalid argument supplied: "
-                        + "at most 1 argument is accepted by CLI and "
-                        + "it must be a valid http URL!");
-                    System.exit(1);
-                }
-                ans = new URL(args[0]);
-            } else {
-                ans = new URL(DEFAULT_ENDPOINT);
-            }
-            if (!ans.getProtocol().isEmpty() && !ans.getProtocol().equals("http")) {
-                System.err.println("Error: only http is currently supported!");
-                System.exit(1);
-            }
-            return ans;
-        } catch (MalformedURLException  e) {
-            System.err.println("Bad argument: " + args[0]);
+    private static URL getListeningEndpoint() {
+        var ans = config.getListeningEndpoint();
+        if (!ans.getProtocol().isEmpty() && !ans.getProtocol().equals("http")) {
+            System.err.println("Error: only http is currently supported!");
             System.exit(1);
-            return null;
         }
+        return ans;
     }
 
     private static URL url;
@@ -111,8 +94,9 @@ public class App
     private static HttpServer httpServer;
     /**
      * Start
+     * @throws IOException
      */
-    private static void startServer() {
+    private static void startServer() throws IOException {
         // extract InetSocketAddress
         var isa = getListeningInetSocketAddress();
         // activate PeerWatcher
@@ -122,8 +106,7 @@ public class App
             System.out.println("Socket opened!");
         } catch (IOException e) {
             System.err.println("Failed to connect httpserver to endpoint: " + isa.toString());
-            e.printStackTrace();
-            System.exit(1);
+            throw e;
         }
         // init thread pools
         initThreadPools();
@@ -132,7 +115,18 @@ public class App
         // launch erlang-speaker
         topologyWatcher = new TopologyWatcher(threadPool, timedThreadPool);
         System.out.println("Starting erlang subsistem...");
-        topologyWatcher.connectToErlang();
+        try {
+            topologyWatcher.connectToErlang(
+                config.getLocalNodeId(),
+                config.getLocalMailBoxId(),
+                config.getCookie(),
+                config.getRemoteProcessId(),
+                config.getCandidateNodes()
+            );
+        } catch (IOException e) {
+            System.err.println("Failed to connect to erlang");
+            throw e;
+        }
         System.out.println("Started!");
         var handler = new HelperHttpHandler(topologyWatcher);
         httpServer.createContext(HelperHttpHandler.PATH, handler);
@@ -173,11 +167,29 @@ public class App
         timedThreadPool.awaitTermination(5, TimeUnit.SECONDS);
     }
 
+    private static DispatcherConfiguration config;
+
+    private static void readConfiguration(String[] args) throws FileNotFoundException, IOException {
+        if (args.length > 1) {
+            System.err.println("Invalid arguments! At most one argument is accepted");
+            System.exit(1);
+        }
+        var configFile = args.length == 0 ? DEFAULT_CONFIG : args[0];
+        config = DispatcherConfiguration.fromFile(configFile);
+    }
+
     public static void main(String[] args) throws InterruptedException
     {
-        url = getListeningEndpoint(args);
-        startServer();
-        waitForTerminationRequest();
-        stopServer();
+        try {
+            readConfiguration(args);
+            url = getListeningEndpoint();
+            startServer();
+            waitForTerminationRequest();
+            stopServer();
+        } catch (Exception e) {
+            System.err.println("CRASHED!");
+            e.printStackTrace();
+            System.exit(1);
+        }
     }
 }
