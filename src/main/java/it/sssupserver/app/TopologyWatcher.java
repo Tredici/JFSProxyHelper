@@ -169,6 +169,17 @@ public class TopologyWatcher {
     // local view of the topology
     private ConcurrentMap<Long, ValueContainer> topology = new ConcurrentSkipListMap<>();
 
+    private ValueContainer addToTopology(ValueContainer v) {
+        var vc = topology.merge(v.getValue().getId(), v, (v1,v2) -> {
+            if (v1.compareTo(v2) > 0) {
+                return v1;
+            } else {
+                return v2;
+            }
+        });
+        return vc;
+    }
+
     // used to handle internal work
     private ExecutorService threadPool;
     private ScheduledExecutorService timedThreadPool;
@@ -215,7 +226,7 @@ public class TopologyWatcher {
                 tryToConnectToErlang();
             }
             if (isConnectedToErlang()) {
-                tryToDownloadInfo();
+                tryToRequestSnapshot();
             }
             handleExpiration();
         }
@@ -252,6 +263,29 @@ public class TopologyWatcher {
                     msg = myMailBox.receive(0);
                     if (msg != null) {
                         System.out.println("Received erlang message: " + msg);
+                        try {
+                            if (msg instanceof OtpErlangTuple) {
+                                var t = (OtpErlangTuple)msg;
+                                if (t.arity() == 2) {
+                                    if (t.elementAt(0).equals(snapshotRes)) {
+                                        // snapshot reqsponse
+                                        var snapshot = (OtpErlangList)t.elementAt(1);
+                                        for (OtpErlangObject otpErlangObject : snapshot) {
+                                            var vcTuple = (OtpErlangTuple)otpErlangObject;
+                                            if (vcTuple.arity() != 10) {
+                                                System.err.println("Invalid DatanodeDescriptor received");
+                                            } else {
+                                                var vc = erlangToValueContainer(vcTuple.elements());
+                                                addToTopology(vc);
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        } catch (Exception e) {
+                            System.err.println("Error occurred while erlang response");
+                            e.printStackTrace();
+                        }
                     }
                 } catch (OtpErlangDecodeException e) {
                     e.printStackTrace();
@@ -325,6 +359,12 @@ public class TopologyWatcher {
                 if (thisNode.ping(test, PING_DELAY_MS)) {
                     currentPeer = i;
                     connected = true;
+                    // request snapshot
+                    tryToRequestSnapshot();
+                    // send all local seen topology
+                    for (var vc : topology.values()) {
+                        tryToNotifyErlang(vc);
+                    }
                     // start mailbox polling
                     receiveFuture = timedThreadPool
                         .scheduleWithFixedDelay(receiveTask, 0, ERLANG_POOL_INTERVALL, TimeUnit.MILLISECONDS);
@@ -343,8 +383,19 @@ public class TopologyWatcher {
     }
 
     // attempt to query erlang system for DatanodeDescriptor[]
-    private void tryToDownloadInfo() {
-        // TODO: query erlang remote DB
+    private static final OtpErlangAtom snapshotReq = new OtpErlangAtom("snapshotReq");
+    private static final OtpErlangAtom snapshotRes = new OtpErlangAtom("snapshotRes");
+    private void tryToRequestSnapshot() {
+        if (isConnectedToErlang()) {
+            // send message {self(), getSnapshot}
+            var msg = new OtpErlangTuple(
+                new OtpErlangObject[] {
+                    myMailBox.self(),
+                    snapshotReq
+                }
+            );
+            myMailBox.send(remoteProcessId, candidateNodes[currentPeer], msg);
+        }
     }
 
     private static final OtpErlangAtom update = new OtpErlangAtom("update");
@@ -440,13 +491,7 @@ public class TopologyWatcher {
         // insert only if status is valid
         if (node.isStatusValid()) {
             var v = new ValueContainer(node);
-            var vc = topology.merge(node.getId(), v, (v1,v2) -> {
-                if (v1.compareTo(v2) > 0) {
-                    return v1;
-                } else {
-                    return v2;
-                }
-            });
+            var vc = addToTopology(v);
             // try to notify erlang system
             tryToNotifyErlang(vc);
         }

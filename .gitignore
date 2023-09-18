@@ -2,6 +2,10 @@
 .vscode
 **/__pycache__
 
+erlang/OLD
+erlang/*.beam
+erlang/*.dump
+
 # Compiled class file
 **.class
 target/*
