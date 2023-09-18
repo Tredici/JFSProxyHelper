@@ -74,16 +74,16 @@ redirect_to_datanode(ClientSocket, Supplier, Path) ->
 
 send_503(ClientSocket) -> 
     H = {http_response, {1,1}, 503, "Service Unavailable"},
+    Body = "503 Service Unavailable",
     Headers = [
         {
             http_header,
             38,
             'Content-Length',
             "Content-Length",
-            "0"
+            integer_to_list(erlang:length(Body))
         }
     ],
-    Body = "",
     send_http_response(ClientSocket, H, Headers, Body).
 
 % redirect GET request
@@ -99,8 +99,10 @@ handle_redirect(ClientSocket, Path) ->
 % send all response headers
 
 % Only GET method is supported
+handle_method_not_supported(ClientSocket, Method) when is_atom(Method) ->
+    handle_method_not_supported(ClientSocket, atom_to_list(Method));
 handle_method_not_supported(ClientSocket, Method) ->
-    H = {http_response, {1, 1}, 404, "Method Not Allowed"},
+    H = {http_response, {1, 1}, 405, "Method Not Allowed"},
     Body = "Unsupported method " ++ Method ++ "\nOnly GET is allowed.\n",
     Headers = [
         {
