@@ -1,0 +1,11 @@
+{
+    "ListeningEndpoint": "http://0.0.0.0:8008/",
+    "LocalNodeId": "dispatcher@127.0.0.1",
+    "LocalMailBoxId": "DispatcherMailBox",
+    "Cookie": "biscotto",
+    "RemoteProcessId": "datastore",
+    "CandidateNodes": [
+        "a@127.0.0.1",
+        "b@127.0.0.1"
+    ]
+}
