@@ -30,6 +30,11 @@
       <version>4.11</version>
       <scope>test</scope>
     </dependency>
+    <dependency>
+      <groupId>com.ericsson</groupId>
+      <artifactId>erlang-jinterface</artifactId>
+      <version>1.12.1</version>
+    </dependency>
   </dependencies>
 
   <build>
